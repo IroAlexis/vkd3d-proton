@@ -5352,9 +5352,24 @@ static HRESULT d3d12_descriptor_heap_create_descriptor_pool(struct d3d12_descrip
     if (!pool_count)
         return S_OK;
 
+    /* If using mutable type, we will allocate the most conservative size.
+     * This is fine since we're attempting to allocate a completely generic descriptor set. */
+
     vk_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     vk_pool_info.pNext = NULL;
-    vk_pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT_EXT;
+
+    if (descriptor_heap->desc.Flags & D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE)
+    {
+        vk_pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT_EXT;
+    }
+    else
+    {
+        if (descriptor_heap->device->device_info.mutable_descriptor_features.mutableDescriptorType)
+            vk_pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_HOST_ONLY_BIT_VALVE;
+        else
+            vk_pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT_EXT;
+    }
+
     vk_pool_info.maxSets = pool_count;
     vk_pool_info.poolSizeCount = pool_count;
     vk_pool_info.pPoolSizes = vk_pool_sizes;
@@ -5455,7 +5470,8 @@ static HRESULT d3d12_descriptor_heap_create_descriptor_set(struct d3d12_descript
     }
 
     if (device->device_info.robustness2_features.nullDescriptor &&
-        binding->vk_descriptor_type != VK_DESCRIPTOR_TYPE_SAMPLER)
+        binding->vk_descriptor_type != VK_DESCRIPTOR_TYPE_SAMPLER &&
+        binding->vk_descriptor_type != VK_DESCRIPTOR_TYPE_MUTABLE_VALVE)
     {
         d3d12_descriptor_heap_zero_initialize(descriptor_heap,
                 binding->vk_descriptor_type, *vk_descriptor_set,
